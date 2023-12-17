@@ -253,6 +253,10 @@ class OdometrySet {
         keyframes.push_back(frame);
       }
     }
+
+    if (keyframes.back() != frames.back()) {
+      keyframes.push_back(frames.back());
+    }
   }
 
   void draw(glk::GLSLShader& shader, float downsample_resolution = 0.1f) {
@@ -402,8 +406,8 @@ class OdometrySet {
       e->setMeasurement(delta_pose);
 
       Eigen::MatrixXd inf = Eigen::MatrixXd::Identity(6, 6);
-      inf.block<3, 3>(0, 0) *= 10.0;
-      inf.block<3, 3>(3, 3) *= 20.0;
+      inf.block<3, 3>(0, 0) *= 0.1;
+      inf.block<3, 3>(3, 3) *= 0.1;
 
       e->setInformation(inf);
       ofs << "EDGE_SE3:QUAT " << i << " " << i + 1 << " ";
@@ -513,7 +517,7 @@ class Odometry2GraphApplication : public guik::Application {
       updated |= ImGui::DragFloat(
           "keyframe_delta_angle", &keyframe_delta_angle, 0.01f, 0.01f, 3.15f);
 
-      if (delta_updated && !updated) {
+      if (delta_updated && !updated && odometry_set) {
         odometry_set->select_keyframes(keyframe_delta_x, keyframe_delta_angle);
       }
       delta_updated = updated;

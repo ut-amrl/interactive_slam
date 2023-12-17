@@ -1,16 +1,25 @@
-#include <hdl_graph_slam/automatic_loop_close_window.hpp>
-
-#include <unordered_set>
 #include <g2o/core/robust_kernel_factory.h>
 #include <g2o/types/slam3d/edge_se3.h>
 #include <g2o/types/slam3d/vertex_se3.h>
 
+#include <hdl_graph_slam/automatic_loop_close_window.hpp>
 #include <hdl_graph_slam/information_matrix_calculator.hpp>
+#include <unordered_set>
 
 namespace hdl_graph_slam {
 
-AutomaticLoopCloseWindow::AutomaticLoopCloseWindow(std::shared_ptr<InteractiveGraphView>& graph)
-    : show_window(false), graph(graph), running(false), loop_detection_source(0), fitness_score_thresh(0.3f), fitness_score_max_range(2.0f), search_method(1), distance_thresh(10.0f), accum_distance_thresh(15.0f), optimize(true) {}
+AutomaticLoopCloseWindow::AutomaticLoopCloseWindow(
+    std::shared_ptr<InteractiveGraphView>& graph)
+    : show_window(false),
+      graph(graph),
+      running(false),
+      loop_detection_source(0),
+      fitness_score_thresh(0.3f),
+      fitness_score_max_range(2.0f),
+      search_method(1),
+      distance_thresh(10.0f),
+      accum_distance_thresh(15.0f),
+      optimize(true) {}
 
 AutomaticLoopCloseWindow::~AutomaticLoopCloseWindow() {
   if (running) {
@@ -35,7 +44,8 @@ void AutomaticLoopCloseWindow::draw_ui() {
 
   ImGui::Text("Loop detection");
   const char* search_methods[] = {"RANDOM", "SEQUENTIAL"};
-  ImGui::Combo("Search method", &search_method, search_methods, IM_ARRAYSIZE(search_methods));
+  ImGui::Combo(
+      "Search method", &search_method, search_methods, IM_ARRAYSIZE(search_methods));
   ImGui::DragFloat("Distance thresh", &distance_thresh, 0.5f, 0.5f, 100.0f);
   ImGui::DragFloat("Accum distance thresh", &accum_distance_thresh, 0.5f, 0.5f, 100.0f);
 
@@ -46,6 +56,9 @@ void AutomaticLoopCloseWindow::draw_ui() {
   if (ImGui::Button("Start")) {
     if (!running) {
       running = true;
+      if (loop_detection_thread.joinable()) {
+        loop_detection_thread.join();
+      }
       loop_detection_thread = std::thread([&]() { loop_detection(); });
     }
   }
@@ -54,7 +67,9 @@ void AutomaticLoopCloseWindow::draw_ui() {
   if (ImGui::Button("Stop")) {
     if (running) {
       running = false;
-      loop_detection_thread.join();
+      if (loop_detection_thread.joinable()) {
+        loop_detection_thread.join();
+      }
     }
   }
 
@@ -67,9 +82,13 @@ void AutomaticLoopCloseWindow::draw_ui() {
 }
 
 void AutomaticLoopCloseWindow::loop_detection() {
-  pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr registration = registration_method.method();
+  pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr registration =
+      registration_method.method();
+
+  int consecutive_no_edges_count = 0;
 
   while (running) {
+    // Find loop candidates
     KeyFrameView::Ptr source = graph->keyframes_view[loop_detection_source];
     Eigen::Isometry3d source_pose = source->lock()->node->estimate();
     auto candidates = find_loop_candidates(source);
@@ -80,39 +99,67 @@ void AutomaticLoopCloseWindow::loop_detection() {
       loop_candidates = candidates;
     }
 
+    // Register loop candidates
     bool edge_inserted = false;
     registration->setInputTarget(source->lock()->cloud);
     for (int i = 0; i < candidates.size(); i++) {
       registration->setInputSource(candidates[i]->lock()->cloud);
 
-      pcl::PointCloud<pcl::PointXYZI>::Ptr aligned(new pcl::PointCloud<pcl::PointXYZI>());
-      Eigen::Isometry3d relative = source_pose.inverse() * candidates[i]->lock()->node->estimate();
+      // Align clouds
+      pcl::PointCloud<pcl::PointXYZI>::Ptr aligned(
+          new pcl::PointCloud<pcl::PointXYZI>());
+      Eigen::Isometry3d relative =
+          source_pose.inverse() * candidates[i]->lock()->node->estimate();
       registration->align(*aligned, relative.matrix().cast<float>());
 
+      // Check registration success
       relative.matrix() = registration->getFinalTransformation().cast<double>();
-      double fitness_score = InformationMatrixCalculator::calc_fitness_score(source->lock()->cloud, candidates[i]->lock()->cloud, relative, fitness_score_max_range);
-
+      double fitness_score =
+          InformationMatrixCalculator::calc_fitness_score(source->lock()->cloud,
+                                                          candidates[i]->lock()->cloud,
+                                                          relative,
+                                                          fitness_score_max_range);
+      // check if the edge is robust
       if (fitness_score < fitness_score_thresh) {
         edge_inserted = true;
-        auto edge = graph->add_edge(source->lock(), candidates[i]->lock(), relative, robust_kernel.type(), robust_kernel.delta());
+        auto edge = graph->add_edge(source->lock(),
+                                    candidates[i]->lock(),
+                                    relative,
+                                    robust_kernel.type(),
+                                    robust_kernel.delta());
       }
     }
 
+    // Optimize graph
     if (edge_inserted && optimize) {
       std::lock_guard<std::mutex> lock(graph->optimization_mutex);
       graph->optimize();
     }
 
+    // Update loop detection source
     loop_detection_source++;
-    if (search_method == 0) {
+    if (search_method == 0) {  // RANDOM
       loop_detection_source = rand() % graph->keyframes_view.size();
     }
 
     loop_detection_source = loop_detection_source % graph->keyframes_view.size();
+
+    // Termination condition
+    if (edge_inserted) {
+      consecutive_no_edges_count = 0;
+    } else {
+      consecutive_no_edges_count++;
+      if (consecutive_no_edges_count == graph->keyframes_view.size()) {
+        consecutive_no_edges_count = 0;
+        loop_detection_source = 0;
+        running = false;
+      }
+    }
   }
 }
 
-std::vector<KeyFrameView::Ptr> AutomaticLoopCloseWindow::find_loop_candidates(const KeyFrameView::Ptr& keyframe) {
+std::vector<KeyFrameView::Ptr> AutomaticLoopCloseWindow::find_loop_candidates(
+    const KeyFrameView::Ptr& keyframe) {
   std::unordered_map<long, float> accum_distances;
   accum_distances[keyframe->lock()->id()] = 0.0f;
 
@@ -167,11 +214,12 @@ std::vector<KeyFrameView::Ptr> AutomaticLoopCloseWindow::find_loop_candidates(co
       continue;
     }
 
-    double dist = (candidate->lock()->node->estimate().translation() - keyframe_pos).norm();
+    double dist =
+        (candidate->lock()->node->estimate().translation() - keyframe_pos).norm();
 
     auto found = accum_distances.find(candidate->lock()->id());
     if (found == accum_distances.end()) {
-      if(dist < distance_thresh) {
+      if (dist < distance_thresh) {
         loop_candidates.push_back(candidate);
       }
       continue;
@@ -200,10 +248,16 @@ void AutomaticLoopCloseWindow::draw_gl(glk::GLSLShader& shader) {
   shader.set_uniform("point_scale", 2.0f);
 
   DrawFlags draw_flags;
-  loop_source->draw(draw_flags, shader, Eigen::Vector4f(0.0f, 0.0f, 1.0f, 1.0f), loop_source->lock()->node->estimate().matrix().cast<float>());
+  loop_source->draw(draw_flags,
+                    shader,
+                    Eigen::Vector4f(0.0f, 0.0f, 1.0f, 1.0f),
+                    loop_source->lock()->node->estimate().matrix().cast<float>());
 
   for (const auto& candidate : loop_candidates) {
-    candidate->draw(draw_flags, shader, Eigen::Vector4f(0.0f, 1.0f, 0.0f, 1.0f), candidate->lock()->node->estimate().matrix().cast<float>());
+    candidate->draw(draw_flags,
+                    shader,
+                    Eigen::Vector4f(0.0f, 1.0f, 0.0f, 1.0f),
+                    candidate->lock()->node->estimate().matrix().cast<float>());
   }
 }
 
@@ -213,7 +267,7 @@ void AutomaticLoopCloseWindow::close() {
   loop_source = nullptr;
   loop_candidates.clear();
 
-  if(running) {
+  if (running) {
     running = false;
     loop_detection_thread.join();
   }
