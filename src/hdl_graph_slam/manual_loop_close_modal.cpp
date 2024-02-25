@@ -1,17 +1,16 @@
-#include <hdl_graph_slam/manual_loop_close_model.hpp>
-
 #include <g2o/types/slam3d/edge_se3.h>
-#include <pcl/registration/sample_consensus_prerejective.h>
-
 #include <pcl/features/fpfh_omp.h>
 #include <pcl/features/normal_3d_omp.h>
-#include <pcl/search/impl/kdtree.hpp>
+#include <pcl/registration/sample_consensus_prerejective.h>
 
 #include <hdl_graph_slam/information_matrix_calculator.hpp>
+#include <hdl_graph_slam/manual_loop_close_model.hpp>
+#include <pcl/search/impl/kdtree.hpp>
 
 namespace hdl_graph_slam {
 
-ManualLoopCloseModal::ManualLoopCloseModal(std::shared_ptr<InteractiveGraphView>& graph, const std::string& data_directory)
+ManualLoopCloseModal::ManualLoopCloseModal(std::shared_ptr<InteractiveGraphView>& graph,
+                                           const std::string& data_directory)
     : graph(graph),
       fitness_score(0),
       global_registration_method(0),
@@ -22,8 +21,7 @@ ManualLoopCloseModal::ManualLoopCloseModal(std::shared_ptr<InteractiveGraphView>
       fpfh_correspondence_randomness(5),
       fpfh_similarity_threshold(0.85f),
       fpfh_max_correspondence_distance(0.30f),
-      fpfh_inlier_fraction(0.25f)
-{
+      fpfh_inlier_fraction(0.25f) {
   canvas.reset(new guik::GLCanvas(data_directory, Eigen::Vector2i(512, 512)));
 }
 
@@ -53,9 +51,7 @@ bool ManualLoopCloseModal::set_end_keyframe(int keyframe_id) {
   return true;
 }
 
-bool ManualLoopCloseModal::has_begin_keyframe() {
-  return begin_keyframe != nullptr;
-}
+bool ManualLoopCloseModal::has_begin_keyframe() { return begin_keyframe != nullptr; }
 
 void ManualLoopCloseModal::close() {
   begin_keyframe = nullptr;
@@ -64,7 +60,8 @@ void ManualLoopCloseModal::close() {
 
 bool ManualLoopCloseModal::run() {
   bool close_window = false;
-  if (ImGui::BeginPopupModal("manual loop close", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+  if (ImGui::BeginPopupModal(
+          "manual loop close", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
     if (begin_keyframe == nullptr || end_keyframe == nullptr) {
       if (begin_keyframe == nullptr) {
         ImGui::Text("begin_keyframe has not been set");
@@ -74,14 +71,20 @@ bool ManualLoopCloseModal::run() {
       }
     } else {
       // create OpenGL canvas
-      ImGuiWindowFlags flags = ImGuiWindowFlags_ChildWindow | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNavFocus;
+      ImGuiWindowFlags flags =
+          ImGuiWindowFlags_ChildWindow | ImGuiWindowFlags_AlwaysAutoResize |
+          ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar |
+          ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNavFocus;
       ImGui::BeginChild("canvas", ImVec2(512, 512), false, flags);
       if (ImGui::IsWindowFocused()) {
         canvas->mouse_control();
       }
 
       draw_canvas();
-      ImGui::Image((void*)canvas->frame_buffer->color().id(), ImVec2(512, 512), ImVec2(0, 1), ImVec2(1, 0));
+      ImGui::Image((void*)canvas->frame_buffer->color().id(),
+                   ImVec2(512, 512),
+                   ImVec2(0, 1),
+                   ImVec2(1, 0));
       ImGui::EndChild();
 
       ImGui::PushItemWidth(400);
@@ -102,7 +105,8 @@ bool ManualLoopCloseModal::run() {
       ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.05f);
       float px = 0.0f;
       if (ImGui::DragFloat("##PX", &px, 0.01, 0.0f, 0.0f, "PX")) {
-        end_keyframe_pose.translation() += end_keyframe_pose.linear().block<3, 1>(0, 0) * px;
+        end_keyframe_pose.translation() +=
+            end_keyframe_pose.linear().block<3, 1>(0, 0) * px;
         update_fitness_score();
       }
 
@@ -110,7 +114,8 @@ bool ManualLoopCloseModal::run() {
       ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.05f);
       float py = 0.0f;
       if (ImGui::DragFloat("##PY", &py, 0.01, 0.0f, 0.0f, "PY")) {
-        end_keyframe_pose.translation() += end_keyframe_pose.linear().block<3, 1>(0, 1) * py;
+        end_keyframe_pose.translation() +=
+            end_keyframe_pose.linear().block<3, 1>(0, 1) * py;
         update_fitness_score();
       }
 
@@ -118,7 +123,8 @@ bool ManualLoopCloseModal::run() {
       ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.05f);
       float pz = 0.0f;
       if (ImGui::DragFloat("##PZ", &pz, 0.01, 0.0f, 0.0f, "PZ")) {
-        end_keyframe_pose.translation() += end_keyframe_pose.linear().block<3, 1>(0, 2) * pz;
+        end_keyframe_pose.translation() +=
+            end_keyframe_pose.linear().block<3, 1>(0, 2) * pz;
         update_fitness_score();
       }
 
@@ -126,7 +132,8 @@ bool ManualLoopCloseModal::run() {
       ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.05f);
       float rx = 0.0f;
       if (ImGui::DragFloat("##RX", &rx, 0.01, 0.0f, 0.0f, "RX")) {
-        end_keyframe_pose = end_keyframe_pose * Eigen::AngleAxisd(rx, Eigen::Vector3d::UnitX());
+        end_keyframe_pose =
+            end_keyframe_pose * Eigen::AngleAxisd(rx, Eigen::Vector3d::UnitX());
         update_fitness_score();
       }
 
@@ -134,7 +141,8 @@ bool ManualLoopCloseModal::run() {
       ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.05f);
       float ry = 0.0f;
       if (ImGui::DragFloat("##RY", &ry, 0.01, 0.0f, 0.0f, "RY")) {
-        end_keyframe_pose = end_keyframe_pose * Eigen::AngleAxisd(ry, Eigen::Vector3d::UnitY());
+        end_keyframe_pose =
+            end_keyframe_pose * Eigen::AngleAxisd(ry, Eigen::Vector3d::UnitY());
         update_fitness_score();
       }
 
@@ -142,7 +150,8 @@ bool ManualLoopCloseModal::run() {
       ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.05f);
       float rz = 0.0f;
       if (ImGui::DragFloat("##RZ", &rz, 0.01, 0.0f, 0.0f, "RZ")) {
-        end_keyframe_pose = end_keyframe_pose * Eigen::AngleAxisd(rz, Eigen::Vector3d::UnitZ());
+        end_keyframe_pose =
+            end_keyframe_pose * Eigen::AngleAxisd(rz, Eigen::Vector3d::UnitZ());
         update_fitness_score();
       }
 
@@ -158,20 +167,22 @@ bool ManualLoopCloseModal::run() {
         auto end_vertex = end_keyframe->lock();
 
         bool update_existing = false;
-        for(const auto& edge : begin_vertex->node->edges()) {
+        for (const auto& edge : begin_vertex->node->edges()) {
           g2o::EdgeSE3* se3_edge = dynamic_cast<g2o::EdgeSE3*>(edge);
-          if(se3_edge == nullptr) {
+          if (se3_edge == nullptr) {
             continue;
           }
 
-          if(se3_edge->vertices()[0] == begin_vertex->node && se3_edge->vertices()[1] == end_vertex->node) {
+          if (se3_edge->vertices()[0] == begin_vertex->node &&
+              se3_edge->vertices()[1] == end_vertex->node) {
             std::cout << "********" << std::endl;
             std::cout << "forward" << std::endl;
             update_existing = true;
             se3_edge->setMeasurement(relative);
             break;
           }
-          if(se3_edge->vertices()[1] == begin_vertex->node && se3_edge->vertices()[0] == end_vertex->node) {
+          if (se3_edge->vertices()[1] == begin_vertex->node &&
+              se3_edge->vertices()[0] == end_vertex->node) {
             std::cout << "********" << std::endl;
             std::cout << "backward" << std::endl;
             update_existing = true;
@@ -180,8 +191,12 @@ bool ManualLoopCloseModal::run() {
           }
         }
 
-        if(!update_existing) {
-          graph->add_edge(begin_keyframe->lock(), end_keyframe->lock(), relative, robust_kernel.type(), robust_kernel.delta());
+        if (!update_existing) {
+          graph->add_edge(begin_keyframe->lock(),
+                          end_keyframe->lock(),
+                          relative,
+                          robust_kernel.type(),
+                          robust_kernel.delta());
         }
         graph->optimize();
 
@@ -195,7 +210,11 @@ bool ManualLoopCloseModal::run() {
 
     if (ImGui::Button("Add edge w/o opt")) {
       Eigen::Isometry3d relative = begin_keyframe_pose.inverse() * end_keyframe_pose;
-      graph->add_edge(begin_keyframe->lock(), end_keyframe->lock(), relative, robust_kernel.type(), robust_kernel.delta());
+      graph->add_edge(begin_keyframe->lock(),
+                      end_keyframe->lock(),
+                      relative,
+                      robust_kernel.type(),
+                      robust_kernel.delta());
       ImGui::CloseCurrentPopup();
       begin_keyframe = nullptr;
       end_keyframe = nullptr;
@@ -215,24 +234,39 @@ bool ManualLoopCloseModal::run() {
 }
 
 void ManualLoopCloseModal::update_fitness_score() {
-  fitness_score = InformationMatrixCalculator::calc_fitness_score(begin_keyframe->lock()->cloud, end_keyframe->lock()->cloud, begin_keyframe_pose.inverse() * end_keyframe_pose, 1.0);
+  fitness_score = InformationMatrixCalculator::calc_fitness_score(
+      begin_keyframe->lock()->cloud,
+      end_keyframe->lock()->cloud,
+      begin_keyframe_pose.inverse() * end_keyframe_pose,
+      1.0);
   fitness_score = std::min(1000000.0, fitness_score);
 }
 
 void ManualLoopCloseModal::auto_align() {
-  if (ImGui::BeginPopupModal("auto align", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+  if (ImGui::BeginPopupModal(
+          "auto align", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
     const char* items[] = {"FPFH"};
     ImGui::Combo("Method", &global_registration_method, items, IM_ARRAYSIZE(items));
 
     // FPFH
-    if(global_registration_method == 0) {
-      ImGui::DragFloat("Normal estimation radius", &fpfh_normal_estimation_radius, 0.01f, 0.01f, 5.0f);
+    if (global_registration_method == 0) {
+      ImGui::DragFloat("Normal estimation radius",
+                       &fpfh_normal_estimation_radius,
+                       0.01f,
+                       0.01f,
+                       5.0f);
       ImGui::DragFloat("Search radius", &fpfh_search_radius, 0.01f, 0.01f, 5.0f);
       ImGui::DragInt("Max iterations", &fpfh_max_iterations, 1000, 1000, 100000);
       ImGui::DragInt("Num samples", &fpfh_num_samples, 1, 1, 100);
-      ImGui::DragInt("Correspondence randomness", &fpfh_correspondence_randomness, 1, 1, 100);
-      ImGui::DragFloat("Similarity threshold", &fpfh_similarity_threshold, 0.01f, 0.01f, 1.0f);
-      ImGui::DragFloat("Max correspondence distance", &fpfh_max_correspondence_distance, 0.01f, 0.01f, 1.0f);
+      ImGui::DragInt(
+          "Correspondence randomness", &fpfh_correspondence_randomness, 1, 1, 100);
+      ImGui::DragFloat(
+          "Similarity threshold", &fpfh_similarity_threshold, 0.01f, 0.01f, 1.0f);
+      ImGui::DragFloat("Max correspondence distance",
+                       &fpfh_max_correspondence_distance,
+                       0.01f,
+                       0.01f,
+                       1.0f);
       ImGui::DragFloat("Inlier fraction", &fpfh_inlier_fraction, 0.01f, 0.01f, 1.0f);
     }
 
@@ -242,10 +276,14 @@ void ManualLoopCloseModal::auto_align() {
         using FeatureT = pcl::FPFHSignature33;
 
         auto_alignment_progress = 1;
-        pcl::PointCloud<pcl::PointNormal>::Ptr begin_keyframe_cloud(new pcl::PointCloud<pcl::PointNormal>());
-        pcl::PointCloud<pcl::PointNormal>::Ptr end_keyframe_cloud(new pcl::PointCloud<pcl::PointNormal>());
-        pcl::PointCloud<FeatureT>::Ptr begin_keyframe_features(new pcl::PointCloud<FeatureT>());
-        pcl::PointCloud<FeatureT>::Ptr end_keyframe_features(new pcl::PointCloud<FeatureT>());
+        pcl::PointCloud<pcl::PointNormal>::Ptr begin_keyframe_cloud(
+            new pcl::PointCloud<pcl::PointNormal>());
+        pcl::PointCloud<pcl::PointNormal>::Ptr end_keyframe_cloud(
+            new pcl::PointCloud<pcl::PointNormal>());
+        pcl::PointCloud<FeatureT>::Ptr begin_keyframe_features(
+            new pcl::PointCloud<FeatureT>());
+        pcl::PointCloud<FeatureT>::Ptr end_keyframe_features(
+            new pcl::PointCloud<FeatureT>());
 
         pcl::copyPointCloud(*begin_keyframe->lock()->cloud, *begin_keyframe_cloud);
         pcl::copyPointCloud(*end_keyframe->lock()->cloud, *end_keyframe_cloud);
@@ -259,7 +297,8 @@ void ManualLoopCloseModal::auto_align() {
         nest.compute(*end_keyframe_cloud);
 
         auto_alignment_progress = 3;
-        pcl::FPFHEstimation<pcl::PointNormal, pcl::PointNormal, pcl::FPFHSignature33> fest;
+        pcl::FPFHEstimation<pcl::PointNormal, pcl::PointNormal, pcl::FPFHSignature33>
+            fest;
         fest.setRadiusSearch(fpfh_search_radius);
         fest.setInputCloud(begin_keyframe_cloud);
         fest.setInputNormals(begin_keyframe_cloud);
@@ -269,7 +308,10 @@ void ManualLoopCloseModal::auto_align() {
         fest.compute(*end_keyframe_features);
 
         auto_alignment_progress = 4;
-        pcl::SampleConsensusPrerejective<pcl::PointNormal, pcl::PointNormal, pcl::FPFHSignature33> align;
+        pcl::SampleConsensusPrerejective<pcl::PointNormal,
+                                         pcl::PointNormal,
+                                         pcl::FPFHSignature33>
+            align;
         align.setInputSource(end_keyframe_cloud);
         align.setSourceFeatures(end_keyframe_features);
         align.setInputTarget(begin_keyframe_cloud);
@@ -282,7 +324,8 @@ void ManualLoopCloseModal::auto_align() {
         align.setMaxCorrespondenceDistance(fpfh_max_iterations);
         align.setInlierFraction(fpfh_inlier_fraction);
 
-        pcl::PointCloud<pcl::PointNormal>::Ptr aligned(new pcl::PointCloud<pcl::PointNormal>());
+        pcl::PointCloud<pcl::PointNormal>::Ptr aligned(
+            new pcl::PointCloud<pcl::PointNormal>());
         align.align(*aligned);
 
         Eigen::Isometry3d relative = Eigen::Isometry3d::Identity();
@@ -298,10 +341,21 @@ void ManualLoopCloseModal::auto_align() {
     }
 
     bool close_parent = false;
-    if (ImGui::BeginPopupModal("progress", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar)) {
-      std::future_status result = auto_alignment_result.wait_for(std::chrono::milliseconds(100));
-      const char* status_texts[] = {"Initializing", "Copy point clouds", "Normal estimation", "Feature extraction", "Sample consensus", "Ready"};
-      ImGui::Text("%c %s", "|/-\\"[(int)(ImGui::GetTime() / 0.05f) & 3], status_texts[auto_alignment_progress]);
+    if (ImGui::BeginPopupModal(
+            "progress",
+            nullptr,
+            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar)) {
+      std::future_status result =
+          auto_alignment_result.wait_for(std::chrono::milliseconds(100));
+      const char* status_texts[] = {"Initializing",
+                                    "Copy point clouds",
+                                    "Normal estimation",
+                                    "Feature extraction",
+                                    "Sample consensus",
+                                    "Ready"};
+      ImGui::Text("%c %s",
+                  "|/-\\"[(int)(ImGui::GetTime() / 0.05f) & 3],
+                  status_texts[auto_alignment_progress]);
 
       float fraction = auto_alignment_progress / 5.0f;
       ImGui::ProgressBar(fraction, ImVec2(128, 16));
@@ -328,17 +382,20 @@ void ManualLoopCloseModal::auto_align() {
 }
 
 void ManualLoopCloseModal::scan_matching() {
-  if (ImGui::BeginPopupModal("scan matching", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+  if (ImGui::BeginPopupModal(
+          "scan matching", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
     registration_method.draw_ui();
     robust_kernel.draw_ui();
 
     if (ImGui::Button("OK")) {
-      pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr registration = registration_method.method();
+      pcl::Registration<pcl::PointXYZI, pcl::PointXYZI>::Ptr registration =
+          registration_method.method();
 
       registration->setInputTarget(begin_keyframe->lock()->cloud);
       registration->setInputSource(end_keyframe->lock()->cloud);
 
-      pcl::PointCloud<pcl::PointXYZI>::Ptr aligned(new pcl::PointCloud<pcl::PointXYZI>());
+      pcl::PointCloud<pcl::PointXYZI>::Ptr aligned(
+          new pcl::PointCloud<pcl::PointXYZI>());
       Eigen::Isometry3d relative = begin_keyframe_pose.inverse() * end_keyframe_pose;
       registration->align(*aligned, relative.matrix().cast<float>());
 
@@ -361,11 +418,17 @@ void ManualLoopCloseModal::draw_gl(glk::GLSLShader& shader) {
   DrawFlags draw_flags;
   shader.set_uniform("point_scale", 2.0f);
   if (begin_keyframe) {
-    begin_keyframe->draw(draw_flags, shader, Eigen::Vector4f(0.0f, 0.0f, 1.0f, 1.0f), begin_keyframe->lock()->estimate().matrix().cast<float>());
+    begin_keyframe->draw(draw_flags,
+                         shader,
+                         Eigen::Vector4f(0.0f, 0.0f, 1.0f, 1.0f),
+                         begin_keyframe->lock()->estimate().matrix().cast<float>());
   }
 
   if (end_keyframe) {
-    end_keyframe->draw(draw_flags, shader, Eigen::Vector4f(0.0f, 1.0f, 0.0f, 1.0f), end_keyframe->lock()->estimate().matrix().cast<float>());
+    end_keyframe->draw(draw_flags,
+                       shader,
+                       Eigen::Vector4f(0.0f, 1.0f, 0.0f, 1.0f),
+                       end_keyframe->lock()->estimate().matrix().cast<float>());
   }
 }
 
@@ -382,12 +445,22 @@ void ManualLoopCloseModal::draw_canvas() {
   canvas->shader->set_uniform("point_scale", 2.0f);
 
   Eigen::Isometry3d relative = begin_keyframe_pose.inverse() * end_keyframe_pose;
-  begin_keyframe->draw(draw_flags, *canvas->shader, Eigen::Vector4f(0.0f, 0.0f, 1.0f, 1.0f), Eigen::Matrix4f::Identity());
-  end_keyframe->draw(draw_flags, *canvas->shader, Eigen::Vector4f(0.0f, 1.0f, 0.0f, 1.0f), relative.cast<float>().matrix());
+  begin_keyframe->draw(draw_flags,
+                       *canvas->shader,
+                       Eigen::Vector4f(0.0f, 0.0f, 1.0f, 1.0f),
+                       Eigen::Matrix4f::Identity());
+  end_keyframe->draw(draw_flags,
+                     *canvas->shader,
+                     Eigen::Vector4f(0.0f, 1.0f, 0.0f, 1.0f),
+                     relative.cast<float>().matrix());
 
   canvas->shader->set_uniform("color_mode", 1);
-  canvas->shader->set_uniform("model_matrix", (relative * Eigen::UniformScaling<double>(3.0)).cast<float>().matrix());
-  glk::Primitives::instance()->primitive(glk::Primitives::COORDINATE_SYSTEM).draw(*canvas->shader);
+  canvas->shader->set_uniform(
+      "model_matrix",
+      (relative * Eigen::UniformScaling<double>(3.0)).cast<float>().matrix());
+  glk::Primitives::instance()
+      ->primitive(glk::Primitives::COORDINATE_SYSTEM)
+      .draw(*canvas->shader);
   canvas->unbind();
 
   glDisable(GL_VERTEX_PROGRAM_POINT_SIZE);
