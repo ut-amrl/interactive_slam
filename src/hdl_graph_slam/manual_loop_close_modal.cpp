@@ -193,6 +193,15 @@ bool ManualLoopCloseModal::run() {
       ImGui::SameLine();
     }
 
+    if (ImGui::Button("Add edge w/o opt")) {
+      Eigen::Isometry3d relative = begin_keyframe_pose.inverse() * end_keyframe_pose;
+      graph->add_edge(begin_keyframe->lock(), end_keyframe->lock(), relative, robust_kernel.type(), robust_kernel.delta());
+      ImGui::CloseCurrentPopup();
+      begin_keyframe = nullptr;
+      end_keyframe = nullptr;
+      close_window = true;
+    }
+
     if (ImGui::Button("Cancel")) {
       ImGui::CloseCurrentPopup();
       begin_keyframe = nullptr;
