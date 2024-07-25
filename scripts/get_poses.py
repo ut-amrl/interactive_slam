@@ -1,15 +1,15 @@
 """
 Author: Donmgmyeong Lee (domlee[at]utexas.edu)
 Date:   Feb 11, 2024
-Description: Get the poses and pointclouds from the map directory (result of interactive_slam)
+Description: Get the poses from the map directory (result of interactive_slam)
 """
+
 import os
 import argparse
-from pathlib import Path
+import pathlib
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R
-import open3d as o3d
 
 
 def get_args():
@@ -20,12 +20,11 @@ def get_args():
         required=True,
         help="Path to the map directory (result of interactive_slam)",
     )
-    parser.add_argument(
-        "--pcd",
-        action="store_true",
-        help="Get the .bin files of the pointclouds corresponding to the keyframes",
-    )
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    args.map_dir = pathlib.Path(args.map_dir)
+
+    return args
 
 
 def load_keyframe_pose(keyframe_pose_file: str) -> np.ndarray:
@@ -60,59 +59,31 @@ def load_keyframe_pose(keyframe_pose_file: str) -> np.ndarray:
     return keyframe_pose
 
 
-def pc_to_bin(pcd_file: str, bin_file: str):
-    """
-    Convert a .pcd file to a .bin file
-
-    Args:
-        pcd_file: Path to the .pcd file
-        bin_file: Path to the .bin file
-    """
-    # load the pointcloud
-    pcd = o3d.io.read_point_cloud(pcd_file)
-    points = np.asarray(pcd.points)
-
-    # save the pointcloud as a .bin file
-    points.astype(np.float32).tofile(bin_file)
-
-
 def main():
     args = get_args()
 
     # Get the paths to the pose files and the timestamps
-    keyframes_files = list(Path(args.map_dir).glob("[0-9]*/data"))
-    print("Load keyframe poses from: ", args.map_dir)
+    keyframes_files = list(args.map_dir.glob("[0-9]*/data"))
+    print(f"Load {len(keyframes_files)} keyframe poses from: ", args.map_dir)
 
     # Get the keyframe poses
-    keyframe_poses = [
-        (pose_file.parent, load_keyframe_pose(pose_file))
-        for pose_file in keyframes_files
-    ]
-    sorted_keyframes = sorted(keyframe_poses, key=lambda x: x[1][0])
+    keyframe_poses = np.zeros((len(keyframes_files), 8))
+    for i, pose_file in enumerate(keyframes_files):
+        keyframe_poses[i] = load_keyframe_pose(pose_file)
+    sorted_keyframes = keyframe_poses[keyframe_poses[:, 0].argsort()]
+
+    # remove duplicates rows
+    _, idx = np.unique(sorted_keyframes[:, 0], axis=0, return_index=True)
+    sorted_keyframes = sorted_keyframes[idx]
 
     # Save the keyframe poses
-    pose_file = Path(args.map_dir) / "poses.txt"
-    os.makedirs(pose_file.parent, exist_ok=True)
+    pose_file = args.map_dir.parent / f"{args.map_dir.name}.txt"
     with open(pose_file, "w") as f:
-        for _, keyframe in sorted_keyframes:
+        for keyframe in sorted_keyframes:
             ts = keyframe[0]
             pose = keyframe[1:]
             f.write(f"{ts:.6f} " + " ".join(f"{p:.8f}" for p in pose) + "\n")
     print(f"Saved {pose_file}")
-
-    # Save the pointclouds (.pcd -> .bin)
-    if not args.pcd:
-        return
-
-    pc_out_dir = Path(args.map_dir) / "points"
-    os.makedirs(pc_out_dir, exist_ok=True)
-    frame = 0
-    for keyframe_dir, pose in sorted_keyframes:
-        pcd_file = str(keyframe_dir / "cloud.pcd")
-        bin_file = str(pc_out_dir / f"{frame}.bin")
-        pc_to_bin(pcd_file, bin_file)
-        frame += 1
-    print(f"saved {len(sorted_keyframes)} pointclouds to {pc_out_dir}")
 
 
 if __name__ == "__main__":
